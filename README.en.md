@@ -1,7 +1,7 @@
 # cloud-r2pan
 
 A file-sharing system styled after the iOS 26 liquid-glass aesthetic, built on **Cloudflare Workers + R2 + D1**.
-Features: file uploads, share links (expiration / download limit / access password), traffic quotas, per-IP rate limiting with auto-ban, download logs, and Chinese/English localization.
+Features: file uploads, share links (expiration / download limit / access password), page-free direct download links, traffic quotas, per-IP rate limiting with auto-ban, download logs, and Chinese/English localization.
 
 > Privacy note: `wrangler.jsonc` does **not** declare the R2/D1 bindings. The real `database_id` is managed inside the Cloudflare dashboard, so cloning this repo exposes no sensitive ID and deploying needs no `database_id`.
 
@@ -46,6 +46,7 @@ Deployment succeeds without the `10021` error.
 
 - Admin console: `https://cloud-r2pan.<your-account>.workers.dev/admin` (log in with the `admin` key)
 - Share page: `https://cloud-r2pan.<your-account>.workers.dev/s/<token>`
+- Direct download: `https://cloud-r2pan.<your-account>.workers.dev/d/<token>` (create it from the admin console; no share page is shown)
 
 ## Local Development
 
@@ -57,7 +58,7 @@ npm run dev      # http://localhost:8787, redirects to /admin
 > Because `wrangler.jsonc` declares no R2/D1 bindings, local `npm run dev` has no local database/storage emulation — use it mainly for UI tweaks; the live worker is the source of truth.
 > For local emulation, temporarily add `d1_databases`/`r2_buckets` back to `wrangler.jsonc` (placeholder id), then remove before deploying.
 
-Database tables (`files` / `shares` / `download_logs` / `banned_ips` / `settings` / `traffic_stats`) are created automatically by `ensureSchema` on the first request; no manual SQL import is needed.
+Database tables (`files` / `shares` / `direct_links` / `download_logs` / `banned_ips` / `settings` / `traffic_stats`) are created automatically by `ensureSchema` on the first request; no manual SQL import is needed. Direct links have their own token and do not expose the share-page password, Turnstile, or OAuth flow.
 
 ## FAQ
 

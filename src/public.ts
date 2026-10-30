@@ -555,6 +555,11 @@ export async function handleDirectDownload(
     if ((r.meta.changes ?? 0) === 0)
       return errorPage(req, 410, { zh: "下载次数已达上限", en: "Download Limit Reached" },
         { zh: `名额已用完。`, en: `Quota used up.` });
+  } else {
+    // 无上限直链也要记录累计下载次数，管理后台才能展示真实使用量。
+    await env.db.prepare(
+      "UPDATE direct_links SET download_count = download_count + 1 WHERE id = ?1"
+    ).bind(token).run();
   }
 
   {

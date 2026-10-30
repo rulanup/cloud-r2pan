@@ -1,6 +1,6 @@
 # cloud-r2pan 架构说明
 
-一个 iOS 26 液态玻璃风格的网盘分享系统，基于 **Cloudflare Workers + R2 + D1** 构建。支持文件上传、分享链接（有效期 / 次数 / 访问密码）、流量限额、单 IP 限流与自动封禁、下载日志、登录审计、2FA 两步验证、Turnstile 人机验证，以及中英双语。
+一个 iOS 26 液态玻璃风格的网盘分享系统，基于 **Cloudflare Workers + R2 + D1** 构建。支持文件上传、分享链接（有效期 / 次数 / 访问密码）、免跳转直链下载、流量限额、单 IP 限流与自动封禁、下载日志、登录审计、2FA 两步验证、Turnstile 人机验证，以及中英双语。
 
 ---
 
@@ -54,21 +54,24 @@ GET  /s/:token             → 分享页 HTML
 GET  /s/:token/info        → 分享元信息 JSON（文件大小、状态、Turnstile 状态）
 POST /s/:token/verify      → 密码校验 + Turnstile 校验 → 颁发下载令牌
 GET  /s/:token/download    → 下载主流程（封禁 → 密码 → Turnstile → R2 Range）
+GET  /d/:token             → 直链下载（不经过分享页，支持有效期 / 次数 / 流量限制）
+GET  /d/:token/:filename   → 带文件名的直链下载（兼容下载工具和部分客户端）
 其他                        → 404
 ```
 
-管理后台 API 内部再按路径分发到十几个子接口（登录、文件增删、分享增删查改、封禁、日志、2FA、Turnstile、设置）。
+管理后台 API 内部再按路径分发到十几个子接口（登录、文件增删、分享与直链增删查改、封禁、日志、2FA、Turnstile、设置）。直链使用独立的 `direct_links` 表和 token，创建后可复制 `/d/:token` 直接下载；直链不提供密码、Turnstile 或 OAuth 门禁。
 
 ---
 
 ## 数据库 Schema（D1）
 
-共 **7 张表**，首次请求时由 `ensureSchema` 自动创建，旧库有幂等 `ALTER TABLE` 迁移：
+核心表由 `ensureSchema` 在首次请求时自动创建，旧库通过幂等迁移补齐：
 
 | 表 | 主键 | 核心字段 | 用途 |
 |---|---|---|---|
 | `files` | `id` | `key`, `name`, `size`, `mime` | R2 对象的元数据索引 |
 | `shares` | `id` | `file_id`, `expires_at`, `max_downloads`, `download_count`, `revoked`, `password_hash`, `password_cipher` | 分享链接。`password_cipher` 存可逆加密后的密码明文（AES-GCM），用于管理员事后查看 |
+| `direct_links` | `id` | `file_id`, `expires_at`, `max_downloads`, `download_count`, `revoked`, `download_name`, `notes` | 独立直链，支持有效期、次数限制、撤销和备注 |
 | `download_logs` | `id` | `share_id`, `file_id`, `ip`, `browser`, `os`, `country`, `bytes`, `created_at` | 每次下载一行，用于"单 IP 重复下载检测"和流量统计 |
 | `login_logs` | `id` | `action`, `ip`, `browser`, `os`, `country`, `result`, `reason`, `created_at` | 管理员登录审计（成功 / 失败 / 限流 / 登出 / 恢复码） |
 | `turnstile_visits` | `(ip, day)` | `count` | 每 IP 每天访问次数，复合主键按天自动归零，超过阈值触发 Turnstile |
@@ -76,7 +79,7 @@ GET  /s/:token/download    → 下载主流程（封禁 → 密码 → Turnstile
 | `settings` | `key` | `value` | 全站 KV 配置（流量限额、Turnstile、2FA 等） |
 | `traffic_stats` | `day` | `bytes`, `downloads` | 每日流量/下载汇总 |
 
-**关键索引**：`idx_shares_file`、`idx_logs_share_ip`、`idx_logs_created`、`idx_login_logs_ip`、`idx_turnstile_day` —— 支撑高频查询在 D1 毫秒级响应。
+**关键索引**：`idx_shares_file`、`idx_direct_links_file`、`idx_logs_share_ip`、`idx_logs_created`、`idx_login_logs_ip`、`idx_turnstile_day` —— 支撑高频查询在 D1 毫秒级响应。
 
 ---
 

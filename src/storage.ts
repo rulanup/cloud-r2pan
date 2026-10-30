@@ -85,7 +85,7 @@ export function createR2Provider(r2: R2Bucket): StorageProvider {
           ? { offset: range.offset, length: range.length }
           : { offset: range.offset }
         : undefined;
-      const obj = (await r2.get(key, r2Range as any)) as any;
+      const obj = (await r2.get(key, r2Range ? { range: r2Range } : undefined)) as any;
       if (!obj) return null;
       return {
         body: obj.body as ReadableStream<Uint8Array>,
@@ -197,7 +197,7 @@ function buildCanonicalRequest(
 async function hmacSha256(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    key instanceof Uint8Array ? key.buffer : key,
+    key instanceof Uint8Array ? key : new Uint8Array(key),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
@@ -205,8 +205,13 @@ async function hmacSha256(key: ArrayBuffer | Uint8Array, data: string): Promise<
   return await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
 }
 
-async function sha256Hex(data: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+async function sha256Hex(data: string | ArrayBuffer | Uint8Array): Promise<string> {
+  const bytes = typeof data === "string"
+    ? new TextEncoder().encode(data)
+    : data instanceof Uint8Array
+      ? data
+      : new Uint8Array(data);
+  const buf = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -354,9 +359,9 @@ export function createS3Provider(cfg: S3Config): StorageProvider {
         bodyHash = "UNSIGNED-PAYLOAD";
         fetchBody = opts.body;
       } else if (opts.body instanceof Uint8Array || opts.body instanceof ArrayBuffer) {
-        const buf = opts.body instanceof ArrayBuffer ? opts.body : opts.body.buffer;
-        bodyHash = await sha256Hex(new TextDecoder().decode(buf));
-        fetchBody = buf;
+        const bytes = opts.body instanceof Uint8Array ? opts.body : new Uint8Array(opts.body);
+        bodyHash = await sha256Hex(bytes);
+        fetchBody = bytes;
       }
     }
 
